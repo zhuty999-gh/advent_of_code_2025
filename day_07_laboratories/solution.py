@@ -71,18 +71,22 @@ def coordinate_processor(coordinate: tuple[int, int], coordinate_map: dict) -> (
 
     # Check propagation cases according to puzzle physics
     match neighbors:
+        # This is the only case in which we add the split counts by 1
+        case {"anchor_value": "|", "cell_down": "^"}:
+            return "^", 1
+
         # Directly below is a splitter; propagate splitter upward.
         case {"cell_down": "^"}:
             return "^", 0
         # Beam comes from left and hits a splitter from below left; propagate upward beam.
         case {"anchor_left": "|", "down_left": "^"}:
-            return "|", 1
+            return "|", 0
         # Beam comes from right and hits a splitter from below right; propagate upward beam.
         case {"anchor_right": "|", "down_right": "^"}:
-            return "|", 1
+            return "|", 0
         # Directly above is a vertical beam, and below is empty; propagate the beam downward.
         case {"anchor_value": "|", "cell_down": "."}:
-            return "|", 1
+            return "|", 0
         # Otherwise, pass through whatever is directly below.
         case _:
             return neighbors["cell_down"], 0
