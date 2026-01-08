@@ -148,12 +148,5 @@ def count_splits(og_state: list[list[str]]) -> int:
         needle += 1
         
     return total_splits
-        
-
-
-
-
-
-
 
 
