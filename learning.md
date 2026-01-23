@@ -144,3 +144,53 @@ To find the largest valid rectangle defined by two corners inside a rectilinear 
    - If a rectangle is strictly inside, no boundary edge can slice through it.
    - Check if any horizontal polygon segment intersects the rectangle's vertical range strictly inside its X-range.
    - Check if any vertical polygon segment intersects the rectangle's horizontal range strictly inside its Y-range.
+
+---
+
+### Mixed Integer Linear Programming (MILP)
+
+**Problem:** Find non-negative integers $x_1, x_2, \ldots, x_n$ that satisfy linear constraints while minimizing a linear objective.
+
+**When to use:** Optimization problems where:
+- You have a linear objective to minimize/maximize (e.g., `sum(x)`)
+- Constraints are linear equations/inequalities (e.g., `A @ x == target`)
+- Variables must be integers (counts, selections, etc.)
+
+**Python Implementation with scipy:**
+
+```python
+import numpy as np
+from scipy.optimize import milp, LinearConstraint, Bounds
+
+def solve_milp(A, target):
+    """
+    Minimize sum(x) subject to A.T @ x == target, x >= 0, x integers.
+    
+    A: (num_vars, num_constraints) matrix
+    target: (num_constraints,) vector
+    """
+    num_vars = A.shape[0]
+    
+    c = np.ones(num_vars)                    # Objective: minimize sum(x)
+    constraints = LinearConstraint(A.T, lb=target, ub=target)  # A.T @ x == target
+    bounds = Bounds(lb=0, ub=np.inf)         # x >= 0
+    integrality = np.ones(num_vars, dtype=int)  # All vars are integers
+    
+    result = milp(c, constraints=constraints, bounds=bounds, integrality=integrality)
+    return int(round(result.fun)) if result.success else -1
+```
+
+**Why MILP is fast:**
+1. **LP Relaxation:** First solves the continuous version (allowing fractional values), which is polynomial time.
+2. **Convex Polytope:** Constraints define a convex shape; optimal is always at a vertex.
+3. **Simplex Algorithm:** Only walks vertices (corners), not all interior points.
+4. **Branch and Bound:** Uses LP bounds to prune the integer search tree intelligently.
+
+**Complexity comparison:**
+
+| Approach | Complexity | Example (6 buttons, 12 presses) |
+|----------|------------|--------------------------------|
+| Brute force sequences | O(B^n) | 6^12 = 2.2 billion |
+| MILP | ~Polynomial | < 1 millisecond |
+
+**Key insight:** When you see a problem asking to "minimize X subject to constraints," think Linear Programming!
