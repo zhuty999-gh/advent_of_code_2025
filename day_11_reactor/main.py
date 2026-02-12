@@ -68,6 +68,7 @@ def find_all_paths(graph: dict[str, list[str]], start: str, end: str) -> list[li
         List of all paths, where each path is a list of device names.
     """
     all_paths = []
+    visited = {start}
     
     def dfs(current: str, path: list[str]):
         if current == end:
@@ -78,12 +79,74 @@ def find_all_paths(graph: dict[str, list[str]], start: str, end: str) -> list[li
             return
         
         for neighbor in graph[current]:
-            path.append(neighbor)
-            dfs(neighbor, path)
-            path.pop()
+            if neighbor not in visited:
+                visited.add(neighbor)
+                path.append(neighbor)
+                dfs(neighbor, path)
+                path.pop()
+                visited.discard(neighbor)
     
     dfs(start, [start])
     return all_paths
+
+
+def topological_sort(graph: dict[str, list[str]], start: str) -> list[str]:
+    """
+    Return a topological ordering of all nodes reachable from start.
+    Assumes the reachable subgraph is a DAG.
+    """
+    visited = set()
+    order = []
+
+    def dfs(node: str):
+        if node in visited:
+            return
+        visited.add(node)
+        for neighbor in graph.get(node, []):
+            dfs(neighbor)
+        order.append(node)
+
+    dfs(start)
+    order.reverse()
+    return order
+
+
+def count_paths_with_required(
+    graph: dict[str, list[str]], start: str, end: str, required: set[str]
+) -> int:
+    """
+    Count all paths from start to end that visit every node in 'required'.
+    
+    Uses topological sort + DP instead of enumerating all paths.
+    
+    State: (node, frozenset of which required nodes have been seen so far)
+    dp[node][seen] = number of paths from start to node where 'seen' is the
+                     subset of required nodes visited along the way.
+    """
+    from collections import defaultdict
+
+    order = topological_sort(graph, start)
+
+    # dp[node] is a dict: frozenset -> count
+    # meaning: number of paths from start to node having seen exactly that subset of required
+    dp: dict[str, dict[frozenset, int]] = defaultdict(lambda: defaultdict(int))
+
+    # Base case: we're at start, having seen whichever required nodes start itself is
+    init_seen = frozenset({start} & required)
+    dp[start][init_seen] = 1
+
+    for node in order:
+        if not dp[node]:
+            continue
+        for seen, cnt in dp[node].items():
+            for neighbor in graph.get(node, []):
+                # What subset of required have we seen after visiting neighbor?
+                new_seen = seen | (frozenset({neighbor}) if neighbor in required else frozenset())
+                dp[neighbor][new_seen] += cnt
+
+    # Sum up all paths reaching 'end' that have seen ALL required nodes
+    full_required = frozenset(required)
+    return dp[end].get(full_required, 0)
 
 
 def main():
@@ -101,7 +164,12 @@ def main():
     for path in paths:
         print(" -> ".join(path))
     
-    print(f"\nAnswer: {len(paths)}")
+    print(f"\nAnswer I: {len(paths)}")
+
+    # Part II: Count paths from svr to out that visit both dac and fft
+    count_dac_fft = count_paths_with_required(graph, "svr", "out", {"dac", "fft"})
+
+    print(f"\nAnswer II: {count_dac_fft}")
 
 
 if __name__ == "__main__":
