@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bitmask Operations — Day 12 Solver</title>
+<script src="trace_data.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1e1e2e;color:#cdd6f4;font-family:'Segoe UI',system-ui,sans-serif;padding:18px 22px;line-height:1.5}
+h1{color:#89b4fa;font-size:1.3em}
+.sub{color:#9399b2;font-size:.84em;margin-bottom:12px}
+.layout{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.panel{background:#313244;border-radius:10px;padding:14px}
+h2{color:#a6e3a1;font-size:.92em;margin:8px 0 5px}
+canvas{display:block;border-radius:4px}
+
+/* operation panel */
+.op-panel{min-width:310px;max-width:380px;font-size:.84em}
+.op-panel table{border-collapse:collapse;width:100%}
+.op-panel td{padding:3px 6px;vertical-align:top}
+.op-panel td:first-child{color:#9399b2;width:100px;white-space:nowrap}
+.op-panel td:last-child{font-family:'Cascadia Code','Consolas',monospace;font-size:.9em;word-break:break-all}
+.op-box{background:#1e1e2e;border-radius:6px;padding:10px 12px;margin:6px 0;font-family:'Cascadia Code','Consolas',monospace;font-size:.82em;line-height:1.7}
+.op-line{display:flex;gap:6px;align-items:baseline}
+.op-label{color:#9399b2;min-width:90px}
+.op-val{color:#cdd6f4}
+.op-result{font-weight:700;font-size:1.05em}
+.good{color:#a6e3a1}.bad{color:#f38ba8}.warn{color:#fab387}.accent{color:#89b4fa}
+
+/* bit strip */
+.bit-strip{display:flex;flex-wrap:wrap;gap:1px;margin:6px 0}
+.bit{width:7px;height:7px;border-radius:1px;background:#45475a}
+.bit.on{background:#89b4fa}
+.bit.mask-on{background:#fab387;box-shadow:0 0 3px #fab387}
+.bit.overlap{background:#f38ba8;box-shadow:0 0 4px #f38ba8}
+
+/* progress */
+.prog-wrap{background:#45475a;border-radius:4px;height:12px;margin:4px 0;overflow:hidden;position:relative}
+.prog-bar{height:100%;border-radius:4px;transition:width .15s;background:#a6e3a1}
+.prog-text{position:absolute;inset:0;text-align:center;font-size:9px;line-height:12px;color:#cdd6f4}
+
+/* group bars */
+.gb-row{display:flex;align-items:center;gap:4px;margin:2px 0;font-size:10px}
+.gb-label{width:24px;color:#9399b2}
+.gb-track{flex:1;height:6px;background:#45475a;border-radius:3px;overflow:hidden}
+.gb-fill{height:100%;border-radius:3px;transition:width .15s}
+.gb-count{width:40px;text-align:right;color:#9399b2;font-family:monospace}
+
+/* info */
+.info-panel{background:#313244;border-radius:10px;padding:10px 14px;margin-top:12px;max-width:920px}
+.step-hdr{color:#f5c2e7;font-size:.8em;margin-bottom:3px}
+.step-desc{font-size:.88em;line-height:1.6}
+
+/* controls */
+.controls{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.btn{background:#585b70;color:#cdd6f4;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.82em;transition:background .15s}
+.btn:hover{background:#6c7086}.btn.ac{background:#89b4fa;color:#1e1e2e;font-weight:600}
+.btn.ac:hover{background:#74c7ec}.btn:disabled{opacity:.3;cursor:default}
+.sp-lbl{color:#9399b2;font-size:.78em;margin-left:6px}
+input[type=range]{width:90px;accent-color:#89b4fa;vertical-align:middle}
+</style>
+</head>
+<body>
+<h1>Bitmask Backtracking — Operation-Level Replay</h1>
+<p class="sub" id="subtitle"></p>
+
+<div class="layout">
+  <div class="panel" id="canvas-panel">
+    <h2>Grid = Bitmask (<span id="grid-dims"></span> = <span id="n-bits"></span> bits)</h2>
+    <p style="font-size:11px;color:#9399b2;margin-bottom:6px">cell (r,c) = bit r×<span class="wval"></span>+c &nbsp;|&nbsp; <span style="color:#89b4fa">■</span> = 1 &nbsp; <span style="color:#45475a">■</span> = 0 &nbsp; <span style="color:#fab387">■</span> = mask &nbsp; <span style="color:#f38ba8">■</span> = conflict</p>
+    <canvas id="cv"></canvas>
+  </div>
+  <div class="panel op-panel">
+    <h2>Bitmask Operation</h2>
+    <div class="op-box" id="op-box">
+      <div class="op-line"><span class="op-label">grid</span><span class="op-val" id="op-grid">0</span></div>
+      <div class="op-line"><span class="op-label">mask</span><span class="op-val" id="op-mask">—</span></div>
+      <div class="op-line"><span class="op-label">grid &amp; mask</span><span class="op-val" id="op-and">—</span></div>
+      <div class="op-line"><span class="op-label">result</span><span class="op-result" id="op-result">—</span></div>
+      <div class="op-line" style="margin-top:4px"><span class="op-label">grid |= mask</span><span class="op-val" id="op-or">—</span></div>
+    </div>
+
+    <h2>Mask Bits (shape placement)</h2>
+    <div class="bit-strip" id="mask-strip"></div>
+
+    <h2>Progress</h2>
+    <div class="prog-wrap"><div class="prog-bar" id="prog-bar"></div><div class="prog-text" id="prog-text"></div></div>
+    <div id="group-bars"></div>
+
+    <h2>Stats</h2>
+    <table id="stats-table"></table>
+  </div>
+</div>
+
+<div class="info-panel">
+  <div class="step-hdr" id="step-hdr">Step 0</div>
+  <div class="step-desc" id="step-desc">Press <strong>Next →</strong> to begin.</div>
+</div>
+
+<div class="controls">
+  <button class="btn" id="prev-btn" disabled>← Prev</button>
+  <button class="btn ac" id="next-btn">Next →</button>
+  <button class="btn" id="play-btn">▶ Play</button>
+  <button class="btn" id="reset-btn">⟲ Reset</button>
+  <button class="btn" id="skip-btn">⏭ End</button>
+  <span class="sp-lbl">Speed</span>
+  <input type="range" id="speed" min="1" max="10" value="5">
+</div>
+
+<script>
+const W = TRACE.w, H = TRACE.h, NBITS = W * H;
+const EVENTS = TRACE.events;
+const N_INST = TRACE.nInstances;
+
+const TYPE_COLORS = ['#f38ba8','#89b4fa','#a6e3a1','#fab387','#cba6f7','#94e2d5'];
+const TYPE_COLORS_DIM = ['#6e3048','#3a4e6e','#3a5e3e','#6e4e38','#4e3a6e','#3a5e5a'];
+
+document.getElementById('subtitle').textContent =
+  `Region #${TRACE.regionIdx}: ${W}×${H} — ${N_INST} instances — ` +
+  (TRACE.result ? 'SOLVABLE' : 'UNSOLVABLE') + ` (${TRACE.elapsed}s)`;
+document.getElementById('grid-dims').textContent = `${W}×${H}`;
+document.getElementById('n-bits').textContent = NBITS;
+document.querySelectorAll('.wval').forEach(e => e.textContent = W);
+
+// ── Canvas ──
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const GAP = 1;
+const CELL = Math.max(4, Math.min(14, Math.floor(620 / Math.max(W, H)) - GAP));
+cv.width = W * (CELL + GAP) - GAP;
+cv.height = H * (CELL + GAP) - GAP;
+
+// ── Sub-step generation ──
+// Each commit event becomes 2 sub-steps:
+//   phase 'test': show mask overlay + AND check
+//   phase 'commit': merge mask into grid (OR)
+// Backtracks become 1 sub-step:
+//   phase 'backtrack': undo last commit
+
+const subSteps = [];
+
+// State for building sub-steps
+let buildPlacements = []; // [{s, cells, bits}]
+
+function bitSet(cells) {
+  return new Set(cells.map(([r,c]) => r * W + c));
+}
+
+// Initial
+subSteps.push({
+  phase: 'init',
+  placements: [],
+  maskCells: null,
+  maskBits: null,
+  shapeType: -1,
+  pos: -1,
+});
+
+for (const ev of EVENTS) {
+  if (ev.t === 'c') {
+    const bits = [...bitSet(ev.cells)].sort((a,b) => a - b);
+
+    // Phase: test (show mask, AND check)
+    subSteps.push({
+      phase: 'test',
+      placements: buildPlacements.map(p => ({...p})),
+      maskCells: ev.cells,
+      maskBits: bits,
+      shapeType: ev.s,
+      pos: ev.p,
+    });
+
+    // Phase: commit (OR merge)
+    buildPlacements.push({ s: ev.s, cells: ev.cells, bits });
+    subSteps.push({
+      phase: 'commit',
+      placements: buildPlacements.map(p => ({...p})),
+      maskCells: ev.cells,
+      maskBits: bits,
+      shapeType: ev.s,
+      pos: ev.p,
+    });
+  } else if (ev.t === 'b') {
+    subSteps.push({
+      phase: 'backtrack',
+      placements: buildPlacements.map(p => ({...p})),
+      maskCells: null,
+      maskBits: null,
+      shapeType: -1,
+      pos: ev.p,
+    });
+    if (buildPlacements.length > 0) buildPlacements.pop();
+  }
+}
+
+// Final
+subSteps.push({
+  phase: 'done',
+  placements: buildPlacements.map(p => ({...p})),
+  maskCells: null,
+  maskBits: null,
+  shapeType: -1,
+  pos: -1,
+});
+
+const TOTAL = subSteps.length;
+
+// ── Rendering ──
+const BG = '#1e1e2e';
+const EMPTY = '#393950';
+
+function drawGrid(step) {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  // Build cell map: bit → {color, dim_color}
+  const cellMap = new Map();
+  for (let pi = 0; pi < step.placements.length; pi++) {
+    const p = step.placements[pi];
+    const isLatest = (step.phase === 'commit' && pi === step.placements.length - 1);
+    for (const [r, c] of p.cells) {
+      const b = r * W + c;
+      cellMap.set(b, { color: TYPE_COLORS[p.s], dim: TYPE_COLORS_DIM[p.s], latest: isLatest });
+    }
+  }
+
+  // Build mask set and overlap set
+  const maskSet = step.maskBits ? new Set(step.maskBits) : new Set();
+  const overlapSet = new Set();
+  if (step.phase === 'test') {
+    for (const b of maskSet) {
+      if (cellMap.has(b)) overlapSet.add(b);
+    }
+  }
+
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const b = r * W + c;
+      const x = c * (CELL + GAP), y = r * (CELL + GAP);
+
+      if (overlapSet.has(b)) {
+        ctx.fillStyle = '#f38ba8';
+        ctx.fillRect(x, y, CELL, CELL);
+      } else if (cellMap.has(b)) {
+        const info = cellMap.get(b);
+        ctx.fillStyle = info.color;
+        ctx.fillRect(x, y, CELL, CELL);
+        if (info.latest) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+        }
+      } else if (maskSet.has(b)) {
+        ctx.fillStyle = step.phase === 'test' ? '#fab387' : TYPE_COLORS[step.shapeType];
+        ctx.globalAlpha = step.phase === 'test' ? 0.55 : 1;
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.globalAlpha = 1;
+        if (step.phase === 'test') {
+          ctx.strokeStyle = '#fab387';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 2]);
+          ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+          ctx.setLineDash([]);
+        }
+      } else {
+        ctx.fillStyle = EMPTY;
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+    }
+  }
+}
+
+function hexChunk(bits, nbits) {
+  // Show as hex, but only the relevant bits
+  if (!bits || bits.length === 0) return '0x0';
+  const max = Math.max(...bits);
+  const nHexDigits = Math.ceil((max + 1) / 4);
+  let hexArr = new Array(nHexDigits).fill(0);
+  for (const b of bits) {
+    hexArr[Math.floor(b / 4)] |= (1 << (b % 4));
+  }
+  return '0x' + hexArr.reverse().map(d => d.toString(16)).join('');
+}
+
+function bitsSetInPlacements(placements) {
+  const s = new Set();
+  for (const p of placements) for (const b of p.bits) s.add(b);
+  return s;
+}
+
+function updateOp(step) {
+  const gridBits = bitsSetInPlacements(step.placements);
+  const gridCount = gridBits.size;
+
+  document.getElementById('op-grid').textContent =
+    `${gridCount} bits set / ${NBITS}`;
+
+  if (step.phase === 'test' || step.phase === 'commit') {
+    const maskBits = step.maskBits;
+    document.getElementById('op-mask').innerHTML =
+      `<span class="warn">${maskBits.length} bits</span>: [${maskBits.join(', ')}]`;
+
+    // AND check
+    let overlapCount = 0;
+    for (const b of maskBits) if (gridBits.has(b)) overlapCount++;
+    if (overlapCount === 0) {
+      document.getElementById('op-and').innerHTML = '<span class="good">0 (no overlap)</span>';
+      document.getElementById('op-result').innerHTML = '<span class="good">✓ NO CONFLICT</span>';
+    } else {
+      document.getElementById('op-and').innerHTML = `<span class="bad">≠ 0 (${overlapCount} bits overlap)</span>`;
+      document.getElementById('op-result').innerHTML = '<span class="bad">✗ CONFLICT</span>';
+    }
+
+    if (step.phase === 'commit') {
+      document.getElementById('op-or').innerHTML =
+        `<span class="accent">${gridCount} bits set</span> (${(gridCount/NBITS*100).toFixed(1)}%)`;
+    } else {
+      document.getElementById('op-or').textContent = '—';
+    }
+  } else {
+    document.getElementById('op-mask').textContent = '—';
+    document.getElementById('op-and').textContent = '—';
+    document.getElementById('op-result').textContent = '—';
+    document.getElementById('op-or').textContent = '—';
+  }
+}
+
+function updateMaskStrip(step) {
+  const el = document.getElementById('mask-strip');
+  if (!step.maskBits) { el.innerHTML = '<span style="color:#9399b2;font-size:11px">—</span>'; return; }
+
+  const gridBits = bitsSetInPlacements(step.placements);
+  const maskSet = new Set(step.maskBits);
+  // Show a window of bits around the mask
+  const minBit = Math.max(0, Math.min(...step.maskBits) - W);
+  const maxBit = Math.min(NBITS - 1, Math.max(...step.maskBits) + W);
+  // Show 3 rows centered on the mask
+  const startRow = Math.max(0, Math.floor(minBit / W) - 1);
+  const endRow = Math.min(H - 1, Math.ceil(maxBit / W) + 1);
+
+  let html = '';
+  for (let r = startRow; r <= endRow; r++) {
+    for (let c = 0; c < W; c++) {
+      const b = r * W + c;
+      let cls = 'bit';
+      if (maskSet.has(b) && gridBits.has(b)) cls += ' overlap';
+      else if (maskSet.has(b)) cls += ' mask-on';
+      else if (gridBits.has(b)) cls += ' on';
+      html += `<div class="${cls}" title="bit ${b} = (${r},${c})"></div>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+function updateProgress(step) {
+  const n = step.placements.length;
+  const pct = (n / N_INST * 100).toFixed(1);
+  document.getElementById('prog-bar').style.width = pct + '%';
+  document.getElementById('prog-text').textContent = `${n} / ${N_INST} (${pct}%)`;
+
+  const typePlaced = new Array(TRACE.counts.length).fill(0);
+  for (const p of step.placements) typePlaced[p.s]++;
+  let html = '';
+  for (let si = 0; si < TRACE.counts.length; si++) {
+    if (TRACE.counts[si] === 0) continue;
+    const pctT = (typePlaced[si] / TRACE.counts[si] * 100).toFixed(0);
+    html += `<div class="gb-row">
+      <span class="gb-label" style="color:${TYPE_COLORS[si]}">S${si}</span>
+      <div class="gb-track"><div class="gb-fill" style="width:${pctT}%;background:${TYPE_COLORS[si]}"></div></div>
+      <span class="gb-count">${typePlaced[si]}/${TRACE.counts[si]}</span>
+    </div>`;
+  }
+  document.getElementById('group-bars').innerHTML = html;
+
+  const filled = bitsSetInPlacements(step.placements).size;
+  document.getElementById('stats-table').innerHTML = `
+    <tr><td>Bits set</td><td>${filled} / ${NBITS}</td></tr>
+    <tr><td>Fill</td><td>${(filled/NBITS*100).toFixed(1)}%</td></tr>
+    <tr><td>Solver time</td><td>${TRACE.elapsed}s</td></tr>
+    <tr><td>Result</td><td class="${TRACE.result?'good':'bad'}">${TRACE.result?'SOLVABLE':'UNSOLVABLE'}</td></tr>
+  `;
+}
+
+function updateInfo(step, idx) {
+  document.getElementById('step-hdr').textContent = `Step ${idx} / ${TOTAL - 1}`;
+  const n = step.placements.length;
+
+  if (step.phase === 'init') {
+    document.getElementById('step-desc').innerHTML =
+      `Empty grid: <code>grid = 0</code> (all ${NBITS} bits are 0). ` +
+      `Each cell (r,c) maps to bit <code>r×${W} + c</code>. ` +
+      `Placing a shape sets its bits via <code>grid |= mask</code>. ` +
+      `Conflict check is <code>grid &amp; mask == 0</code>.`;
+  } else if (step.phase === 'test') {
+    const bits = step.maskBits;
+    document.getElementById('step-desc').innerHTML =
+      `<strong style="color:${TYPE_COLORS[step.shapeType]}">Testing S${step.shapeType}</strong> ` +
+      `(instance ${step.pos + 1}/${N_INST}): mask has ${bits.length} bits ` +
+      `[${bits.slice(0, 8).join(', ')}${bits.length > 8 ? ', ...' : ''}]. ` +
+      `<code>grid &amp; mask</code> → checking if any of these ${bits.length} bit positions are already 1 in the grid...`;
+  } else if (step.phase === 'commit') {
+    document.getElementById('step-desc').innerHTML =
+      `<span class="good">✓ Committed</span> <strong style="color:${TYPE_COLORS[step.shapeType]}">S${step.shapeType}</strong>: ` +
+      `<code>grid |= mask</code> → ${step.maskBits.length} bits set to 1. ` +
+      `Grid now has <strong>${bitsSetInPlacements(step.placements).size}</strong> / ${NBITS} bits set ` +
+      `(${(bitsSetInPlacements(step.placements).size/NBITS*100).toFixed(1)}%).`;
+  } else if (step.phase === 'backtrack') {
+    document.getElementById('step-desc').innerHTML =
+      `<span class="bad">Backtrack</span> from instance ${step.pos}: ` +
+      `no valid mask found where <code>grid &amp; mask == 0</code>. ` +
+      `Undo previous placement, restore grid to prior state.`;
+  } else if (step.phase === 'done') {
+    document.getElementById('step-desc').innerHTML = TRACE.result
+      ? `<span class="good"><strong>✓ All ${N_INST} shapes placed.</strong></span> ` +
+        `Final grid: ${bitsSetInPlacements(step.placements).size}/${NBITS} bits set. ` +
+        `The greedy first-fit with forward checking found a valid packing without any backtracking — ` +
+        `the ${(bitsSetInPlacements(step.placements).size/NBITS*100).toFixed(1)}% fill left enough room.`
+      : `<span class="bad"><strong>✗ No valid packing.</strong></span> Search exhausted.`;
+  }
+}
+
+function render(idx) {
+  const step = subSteps[idx];
+  drawGrid(step);
+  updateOp(step);
+  updateMaskStrip(step);
+  updateProgress(step);
+  updateInfo(step, idx);
+  document.getElementById('prev-btn').disabled = idx === 0;
+  document.getElementById('next-btn').disabled = idx === TOTAL - 1;
+}
+
+// ── Controls ──
+let cur = 0, playing = false, timer = null;
+
+function goTo(i) {
+  cur = Math.max(0, Math.min(i, TOTAL - 1));
+  render(cur);
+}
+
+document.getElementById('next-btn').addEventListener('click', () => goTo(cur + 1));
+document.getElementById('prev-btn').addEventListener('click', () => goTo(cur - 1));
+document.getElementById('reset-btn').addEventListener('click', () => { stopPlay(); goTo(0); });
+document.getElementById('skip-btn').addEventListener('click', () => { stopPlay(); goTo(TOTAL - 1); });
+document.getElementById('play-btn').addEventListener('click', togglePlay);
+
+function togglePlay() {
+  if (playing) { stopPlay(); return; }
+  playing = true;
+  document.getElementById('play-btn').textContent = '⏸ Pause';
+  tick();
+}
+function stopPlay() {
+  playing = false;
+  document.getElementById('play-btn').textContent = '▶ Play';
+  clearTimeout(timer);
+}
+function tick() {
+  if (!playing) return;
+  if (cur < TOTAL - 1) {
+    goTo(cur + 1);
+    const sp = +document.getElementById('speed').value;
+    timer = setTimeout(tick, Math.max(15, 500 - sp * 45));
+  } else stopPlay();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goTo(cur + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(cur - 1); }
+  if (e.key === 'Home') { e.preventDefault(); goTo(0); }
+  if (e.key === 'End') { e.preventDefault(); goTo(TOTAL - 1); }
+});
+
+goTo(0);
+</script>
+</body>
+</html>
