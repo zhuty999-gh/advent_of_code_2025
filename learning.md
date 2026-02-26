@@ -194,3 +194,77 @@ def solve_milp(A, target):
 | MILP | ~Polynomial | < 1 millisecond |
 
 **Key insight:** When you see a problem asking to "minimize X subject to constraints," think Linear Programming!
+
+---
+
+### Shape Packing via Bitmask Backtracking (2D Bin Packing / Exact Cover)
+
+**Problem:** Given rectangular grids and a list of shapes (with quantities), determine if all shapes can be placed on the grid without overlapping. Shapes can be rotated and flipped. The grid doesn't need to be fully covered. This is a 2D bin packing / exact cover problem — NP-complete, LeetCode Hard territory.
+
+#### Key Terminology
+
+- **Shape type**: One of 6 fixed patterns (e.g., a 3×3 U-shape).
+- **Orientation**: A rotation/flip of a shape type. Up to 8 unique orientations per shape (4 rotations × 2 flips = dihedral group D4). Some collapse due to symmetry.
+- **Placement**: A specific orientation at a specific (row, col) on the grid. One shape type on a 48×46 grid might have ~16,000 placements.
+- **Instance**: A single copy of a shape type that must be placed. "65 copies of shape 0" = 65 instances.
+
+The hierarchy: 6 shape types → each has 2–8 orientations → each orientation has many grid positions → thousands of placements per type.
+
+#### Approach 1: Algorithm X with Dancing Links (DLX)
+
+**Exact Cover Formulation:**
+
+Build a boolean matrix where:
+
+- **Rows** = every possible placement (instance × orientation × position)
+- **Primary columns** = one per piece instance (or one per shape type with multiplicity). Must be covered exactly once (or exactly N times with multiplicity).
+- **Secondary columns** = one per grid cell. Can be covered at most once (no overlap), but don't have to be covered.
+
+Algorithm X searches for a subset of rows that covers all primary columns exactly the required number of times and no secondary column more than once.
+
+**Dancing Links Data Structure:**
+
+A sparse representation of the boolean matrix using doubly-linked list nodes. Each node has left/right/up/down pointers. Only 1s in the matrix get nodes.
+
+- **Cover** a column: unlink it and all conflicting rows. Nodes "dance out."
+- **Uncover** a column: relink everything. Nodes "dance back in." O(1) per pointer — the magic of DLX.
+- **MRV heuristic**: Always branch on the column with the fewest remaining rows.
+
+**Multiplicity Variant:** Instead of one primary column per instance, use one column per shape type with a `remaining` counter. Decrement on each placement; remove from header list when it hits 0.
+
+#### Approach 2: Bitmask Backtracking (what the code actually uses)
+
+**Core Idea:** Represent the entire grid as a single integer. Each bit = one cell. A 48×46 grid = a 2208-bit integer.
+
+Each placement is precomputed as a bitmask. Collision detection becomes a single bitwise AND:
+
+```python
+grid & placement_mask == 0   # no conflict, safe to place
+grid | placement_mask         # place the piece
+```
+
+**Symmetry Breaking:** Identical instances of the same shape share the same placement list. Enforce ascending placement index order among same-type instances. This prevents exploring N! equivalent permutations (e.g., 65! ≈ 10^90 for 65 copies of shape 0).
+
+**Forward Checking:** After each placement, scan remaining shape types. Count how many placements still fit (`grid & mask == 0`). If the count < copies still needed → impossible → backtrack immediately. Weak but cheap — catches obvious dead ends without expensive recursive search.
+
+**Why It's Fast Enough:**
+
+1. **Cell count check**: Most regions fail instantly (total cells needed > grid area).
+2. **Forward checking**: Catches dead ends within a few placements.
+3. **Symmetry breaking**: Eliminates astronomical redundancy from identical pieces.
+4. **Bitmask speed**: Collision detection is a single CPU-level integer operation.
+5. **Most constrained first**: Shape types sorted by fewest placements.
+
+#### DLX vs Bitmask Comparison
+
+| Aspect | DLX | Bitmask |
+|--------|-----|---------|
+| Data structure | Doubly-linked list nodes | Python integers |
+| Collision check | Pointer traversal | Single `&` operation |
+| Dead end detection | MRV (column sizes) | Forward checking (rescan) |
+| State update | Cover/uncover columns | `\|=` to place, restore int to undo |
+| Python performance | Slow (object/pointer overhead) | Fast (C-level integer ops) |
+
+Both are the same fundamental algorithm: backtracking search with pruning. They differ in data structure and heuristics, not in strategy.
+
+**Complexity:** Worst case exponential (P^N for P placements and N instances). In practice, the optimizations make it tractable — most regions either fail trivially or solve quickly.
